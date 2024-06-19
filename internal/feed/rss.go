@@ -90,6 +90,10 @@ func (ct *SourceTranslator) Translate(feed interface{}) (*gofeed.Feed, error) {
 		if rss.Items[i].Source != nil && rss.Items[i].Source.Title != "" {
 			f.Items[i].Authors = append(f.Items[i].Authors, &gofeed.Person{Name: rss.Items[i].Source.Title})
 		}
+
+		if rss.Items[i].Source != nil && rss.Items[i].Source.URL != "" {
+			f.Items[i].Links = append(f.Items[i].Links, rss.Items[i].Source.URL)
+		}
 	}
   
 	return f, nil
@@ -179,6 +183,10 @@ func getItemsFromRSSFeedTask(request RSSFeedRequest) ([]RSSFeedItem, error) {
 			rssItem.ChannelName = request.Title
 		} else {
 			rssItem.ChannelName = feed.Title
+		}
+
+		if request.UseSource && len(item.Links) > 1 && item.Links[1] != "" {
+			rssItem.ChannelURL = item.Links[1]
 		}
 
 		if item.Image != nil {
