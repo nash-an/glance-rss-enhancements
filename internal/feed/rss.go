@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/mmcdole/gofeed"
+	"github.com/mmcdole/gofeed/rss"
 )
 
 type RSSFeedItem struct {
@@ -49,6 +50,7 @@ type RSSFeedRequest struct {
 	HideCategories  bool   `yaml:"hide-categories"`
 	HideDescription bool   `yaml:"hide-description"`
 	ItemLinkPrefix  string `yaml:"item-link-prefix"`
+	UseSource       bool   `yaml:"use-source"`
 }
 
 type RSSFeedItems []RSSFeedItem
@@ -63,9 +65,43 @@ func (f RSSFeedItems) SortByNewest() RSSFeedItems {
 
 var feedParser = gofeed.NewParser()
 
+type SourceTranslator struct {
+	defaultTranslator *gofeed.DefaultRSSTranslator
+}
+
+func NewSourceTranslator() *SourceTranslator {
+	t := &SourceTranslator{}
+	t.defaultTranslator = &gofeed.DefaultRSSTranslator{}
+	return t
+}
+
+func (ct *SourceTranslator) Translate(feed interface{}) (*gofeed.Feed, error) {
+	rss, found := feed.(*rss.Feed)
+		if !found {
+		return nil, fmt.Errorf("feed did not match expected type of *rss.Feed")
+	}
+
+	f, err := ct.defaultTranslator.Translate(rss)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range f.Items {
+		if rss.Items[i].Source != nil && rss.Items[i].Source.Title != "" {
+			f.Items[i].Authors = append(f.Items[i].Authors, &gofeed.Person{Name: rss.Items[i].Source.Title})
+		}
+	}
+  
+	return f, nil
+}
+
 func getItemsFromRSSFeedTask(request RSSFeedRequest) ([]RSSFeedItem, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
+
+	if request.UseSource {
+		feedParser.RSSTranslator = NewSourceTranslator()
+	}
 
 	feed, err := feedParser.ParseURLWithContext(request.Url, ctx)
 
@@ -137,7 +173,9 @@ func getItemsFromRSSFeedTask(request RSSFeedRequest) ([]RSSFeedItem, error) {
 			rssItem.Categories = categories
 		}
 
-		if request.Title != "" {
+		if request.UseSource && item.Authors != nil && item.Authors[0].Name != "" {
+			rssItem.ChannelName = item.Authors[0].Name
+		} else if request.Title != "" {
 			rssItem.ChannelName = request.Title
 		} else {
 			rssItem.ChannelName = feed.Title
